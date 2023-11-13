@@ -97,7 +97,7 @@ systemctl restart nginx
 cat > app.py <<EOL
 from dotenv import load_dotenv
 load_dotenv()
-from flask import Flask, request, render_template
+from flask import Flask, request, render_template, jsonify
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
 import os
@@ -125,6 +125,8 @@ def request_number():
     except TwilioRestException as e:
         return f"Failed to request new number: {e}"
 
+messages = []
+
 @app.route('/sms', methods=['POST'])
 def sms_received():
     # Get the message body and sender's number from the request
@@ -136,7 +138,13 @@ def sms_received():
     print(f"Message from {from_number}: {message_body}")
 
     # You need to return a valid TwiML response (even if it's empty)
+    messages.append(f"Message from {from_number}: {message_body}")
     return "<Response></Response>"
+
+@app.route('/get_messages')
+def get_messages():
+    # Return the messages list as a JSON response
+    return jsonify(messages)
 
 if __name__ == '__main__':
     app.run(debug=True)
@@ -163,16 +171,23 @@ cat > templates/sms.html <<EOL
 <head>
     <title>SMS Messages</title>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script>
+<script>
+    $(document).ready(function() {
         function fetchMessages() {
-            $.get('/get_messages', function(data) {
-                $('#messages').html(data);
+            $.getJSON('/get_messages', function(data) {
+                var messagesHtml = '';
+                $.each(data, function(index, message) {
+                    messagesHtml += '<div class="message"><strong>' + message.from + ':</strong> ' + message.body + '</div>';
+                });
+                $('#messages').html(messagesHtml);
             });
         }
 
         // Poll for new messages every 5 seconds
         setInterval(fetchMessages, 5000);
-    </script>
+    });
+</script>
+
 </head>
 <body>
     <div id="messages">Loading messages...</div>
@@ -187,7 +202,7 @@ if [ "$DOMAIN" != "localhost" ]; then
     whiptail --title "DNS Configuration" --msgbox "Ensure your domain name's DNS settings are correctly configured:\n\n1. Set an A record that points your domain to your server's public IP address.\n2. Wait for the DNS changes to propagate, which might take some time.\n\nAfter confirming these settings, the script will attempt to acquire an SSL certificate for your domain." 15 60
     
     # Proceed to request SSL certificate
-    certbot --nginx -d $DOMAIN
+    certbot --nginx --non-interactive --agree-tos --redirect --no-eff-email --email your-email@example.com -d $DOMAIN
 fi
 
 systemctl enable certbot.timer
