@@ -172,14 +172,14 @@ cat > templates/sms.html <<EOL
     <title>SMS Messages</title>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script>
-    $(document).ready(function() {
+    \$(document).ready(function() {
         function fetchMessages() {
             $.getJSON('/get_messages', function(data) {
                 var messagesHtml = '';
                 $.each(data, function(index, message) {
                     messagesHtml += '<div class="message"><strong>' + message.from + ':</strong> ' + message.body + '</div>';
                 });
-                $('#messages').html(messagesHtml);
+                \$('#messages').html(messagesHtml);
             });
         }
 
