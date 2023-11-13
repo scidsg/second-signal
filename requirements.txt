@@ -1,0 +1,8 @@
+Flask
+gunicorn
+twilio
+SQLAlchemy
+requests
+python-dotenv
+pytest
+coverage
