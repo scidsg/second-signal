@@ -260,9 +260,12 @@ cat > templates/show_number.html <<EOL
 </html>
 EOL
 
-python3
- with app.app_context():
-    db.create_all()
+cat > init_db.py <<EOL
+from app import db
+db.create_all()
+EOL
+
+python3 init_db.py
 
 # Deactivate the virtual environment
 deactivate
