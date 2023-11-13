@@ -35,6 +35,7 @@ fi
 # Use whiptail to collect environment variables
 TWILIO_ACCOUNT_SID=$(whiptail --inputbox "Enter your Twilio Account SID" 20 60 3>&1 1>&2 2>&3)
 TWILIO_AUTH_TOKEN=$(whiptail --inputbox "Enter your Twilio Auth Token" 20 60 3>&1 1>&2 2>&3)
+FLASK_SECRET_KEY=$(openssl rand -hex 16)
 
 # Check if values are provided
 if [ -z "$TWILIO_ACCOUNT_SID" ] || [ -z "$TWILIO_AUTH_TOKEN" ]; then
@@ -44,6 +45,7 @@ fi
 
 # Create .env file with the environment variables
 cat > .env <<EOL
+FLASK_SECRET_KEY=$FLASK_SECRET_KEY
 TWILIO_ACCOUNT_SID=$TWILIO_ACCOUNT_SID
 TWILIO_AUTH_TOKEN=$TWILIO_AUTH_TOKEN
 EOL
@@ -97,12 +99,17 @@ systemctl restart nginx
 cat > app.py <<EOL
 from dotenv import load_dotenv
 load_dotenv()
-from flask import Flask, request, render_template, jsonify
+from flask import Flask, request, render_template, jsonify, redirect, url_for, session, flash
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
 import os
 
 app = Flask(__name__)
+
+# Set the secret key from an environment variable
+app.secret_key = os.getenv('FLASK_SECRET_KEY')
+if not app.secret_key:
+    raise RuntimeError("FLASK_SECRET_KEY is not set in the environment variables")
 
 @app.route('/')
 def index():
@@ -116,35 +123,34 @@ twilio_client = Client(account_sid, auth_token)
 @app.route('/request_number', methods=['POST'])
 def request_number():
     try:
-        # Specify the desired area code
-        desired_area_code = "415"  # Replace with the area code you want
+        desired_area_code = "415"  # Replace with the desired area code
         new_number = twilio_client.incoming_phone_numbers.create(
             area_code=desired_area_code
         )
-        return f"New number requested: {new_number.phone_number}"
+        session['new_number'] = new_number.phone_number  # Store the number in the session
+        return redirect(url_for('show_number'))  # Redirect to the new route
     except TwilioRestException as e:
-        return f"Failed to request new number: {e}"
+        flash(f"Failed to request new number: {e}")  # Flash an error message
+        return redirect(url_for('index'))  # Redirect back to the index page
+
+@app.route('/show_number')
+def show_number():
+    new_number = session.get('new_number', None)  # Retrieve the number from the session
+    return render_template('show_number.html', phone_number=new_number)  # Render the template
 
 messages = []
 
 @app.route('/sms', methods=['POST'])
 def sms_received():
-    # Get the message body and sender's number from the request
     from_number = request.form['From']
     message_body = request.form['Body']
-
-    # Process the message (e.g., store it, display it, etc.)
-    # For now, let's just print it
     print(f"Message from {from_number}: {message_body}")
-
-    # You need to return a valid TwiML response (even if it's empty)
-    messages.append(f"Message from {from_number}: {message_body}")
-    return "<Response></Response>"
+    messages.append({'from': from_number, 'body': message_body})  # Append the message as a dict
+    return "<Response></Response>"  # Return an empty TwiML response
 
 @app.route('/get_messages')
 def get_messages():
-    # Return the messages list as a JSON response
-    return jsonify(messages)
+    return jsonify(messages)  # Return the messages as JSON
 
 if __name__ == '__main__':
     app.run(debug=True)
