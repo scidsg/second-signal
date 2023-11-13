@@ -103,8 +103,20 @@ from flask import Flask, request, render_template, jsonify, redirect, url_for, s
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
 import os
+from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///messages.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+class Message(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    from_number = db.Column(db.String(50))
+    body = db.Column(db.String(1600))
+
+    def __repr__(self):
+        return f"<Message from {self.from_number}>"
 
 # Set the secret key from an environment variable
 app.secret_key = os.getenv('FLASK_SECRET_KEY')
@@ -144,13 +156,15 @@ messages = []
 def sms_received():
     from_number = request.form['From']
     message_body = request.form['Body']
-    print(f"Message from {from_number}: {message_body}")
-    messages.append({'from': from_number, 'body': message_body})  # Append the message as a dict
-    return "<Response></Response>"  # Return an empty TwiML response
+    message = Message(from_number=from_number, body=message_body)
+    db.session.add(message)
+    db.session.commit()
+    return "<Response></Response>"
 
 @app.route('/get_messages')
 def get_messages():
-    return jsonify(messages)  # Return the messages as JSON
+    messages = Message.query.order_by(Message.id.desc()).all()
+    return jsonify([{'from': m.from_number, 'body': m.body} for m in messages])
 
 if __name__ == '__main__':
     app.run(debug=True)
@@ -177,15 +191,54 @@ cat > templates/sms.html <<EOL
 <head>
     <title>SMS Messages</title>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script>
+	<script>
+	    \$(document).ready(function() {
+	        var lastMessageId = null; // Initialize last message ID
+
+	        function fetchMessages() {
+	            $.getJSON('/get_messages', function(data) {
+	                data.forEach(function(message) {
+	                    if (lastMessageId === null || message.id > lastMessageId) {
+	                        \$('#messages').append(
+	                            '<div class="message"><strong>' + message.from + ':</strong> ' + message.body + '</div>'
+	                        );
+	                        lastMessageId = message.id; // Update the last message ID
+	                    }
+	                });
+	            });
+	        }
+
+	        // Poll for new messages every 5 seconds
+	        setInterval(fetchMessages, 5000);
+	    });
+	</script>
+</head>
+<body>
+    <div id="messages">Loading messages...</div>
+</body>
+</html>
+EOL
+
+cat > templates/show_number.html <<EOL
+<!DOCTYPE html>
+<html>
+<head>
+    <title>New Phone Number</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+	<script>
     \$(document).ready(function() {
+        var lastMessageId = null; // Initialize last message ID
+
         function fetchMessages() {
             $.getJSON('/get_messages', function(data) {
-                var messagesHtml = '';
-                $.each(data, function(index, message) {
-                    messagesHtml += '<div class="message"><strong>' + message.from + ':</strong> ' + message.body + '</div>';
+                data.forEach(function(message) {
+                    if (lastMessageId === null || message.id > lastMessageId) {
+                        \$('#messages').append(
+                            '<div class="message"><strong>' + message.from + ':</strong> ' + message.body + '</div>'
+                        );
+                        lastMessageId = message.id; // Update the last message ID
+                    }
                 });
-                \$('#messages').html(messagesHtml);
             });
         }
 
@@ -196,10 +249,20 @@ cat > templates/sms.html <<EOL
 
 </head>
 <body>
-    <div id="messages">Loading messages...</div>
+    {% if phone_number %}
+        <h1>Your new phone number: {{ phone_number }}</h1>
+        <div id="messages">Loading messages...</div>
+    {% else %}
+        <h1>No new number to display.</h1>
+    {% endif %}
+    <a href="{{ url_for('index') }}">Go back</a>
 </body>
 </html>
 EOL
+
+python3
+ with app.app_context():
+    db.create_all()
 
 # Deactivate the virtual environment
 deactivate
