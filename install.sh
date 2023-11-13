@@ -184,6 +184,9 @@ EOL
 deactivate
 
 if [ "$DOMAIN" != "localhost" ]; then
+    whiptail --title "DNS Configuration" --msgbox "Ensure your domain name's DNS settings are correctly configured:\n\n1. Set an A record that points your domain to your server's public IP address.\n2. Wait for the DNS changes to propagate, which might take some time.\n\nAfter confirming these settings, the script will attempt to acquire an SSL certificate for your domain." 15 60
+    
+    # Proceed to request SSL certificate
     certbot --nginx -d $DOMAIN
 fi
 
