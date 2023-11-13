@@ -166,6 +166,14 @@ def get_messages():
     messages = Message.query.order_by(Message.id.desc()).all()
     return jsonify([{'from': m.from_number, 'body': m.body} for m in messages])
 
+def create_app():
+    app = Flask(__name__)
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///messages.db'
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    db.init_app(app)
+    return app
+
+
 if __name__ == '__main__':
     app.run(debug=True)
 EOL
@@ -260,15 +268,19 @@ cat > templates/show_number.html <<EOL
 </html>
 EOL
 
-# Deactivate the virtual environment
-deactivate
-
 cat > init_db.py <<EOL
-from app import db
-db.create_all()
+# init_db.py
+from app import db, create_app
+
+app = create_app()
+with app.app_context():
+    db.create_all()
 EOL
 
-python3 init_db.py
+python init_db.py
+
+# Deactivate the virtual environment
+deactivate
 
 if [ "$DOMAIN" != "localhost" ]; then
     whiptail --title "DNS Configuration" --msgbox "Ensure your domain name's DNS settings are correctly configured:\n\n1. Set an A record that points your domain to your server's public IP address.\n2. Wait for the DNS changes to propagate, which might take some time.\n\nAfter confirming these settings, the script will attempt to acquire an SSL certificate for your domain." 15 60
