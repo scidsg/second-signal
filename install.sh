@@ -63,6 +63,7 @@ cat > /etc/nginx/sites-available/second-signal.nginx <<EOL
 server {
     listen 80;
     server_name second-signal.local;
+
     location / {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
@@ -74,6 +75,12 @@ server {
 EOL
 
 # Link Nginx server block and restart Nginx
+# Remove existing symbolic link if it exists
+if [ -L /etc/nginx/sites-enabled/second-signal.nginx ]; then
+    rm /etc/nginx/sites-enabled/second-signal.nginx
+fi
+
+# Create a new symbolic link
 ln -s /etc/nginx/sites-available/second-signal.nginx /etc/nginx/sites-enabled
 nginx -t
 systemctl restart nginx
