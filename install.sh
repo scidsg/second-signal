@@ -13,7 +13,7 @@ apt update && apt -y dist-upgrade && apt -y autoremove
 apt install python3 python3-pip -y
 
 # Install virtualenv and whiptail
-apt install -y python3 python3-pip virtualenv python3-venv whiptail ufw
+apt install -y python3 python3-pip virtualenv python3-venv whiptail ufw certbot python3-certbot-nginx
 
 # Create a virtual environment in your project directory
 cd $HOME
@@ -23,6 +23,14 @@ fi
 cd second-signal
 python3 -m venv venv
 source venv/bin/activate
+
+# Ask if the user wants to set up a domain name
+if (whiptail --title "Domain Setup" --yesno "Do you want to set up a domain name?" 10 60); then
+    # If yes, ask for the domain name
+    DOMAIN=$(whiptail --inputbox "Enter your domain name" 10 60 3>&1 1>&2 2>&3)
+else
+    DOMAIN="localhost"
+fi
 
 # Use whiptail to collect environment variables
 TWILIO_ACCOUNT_SID=$(whiptail --inputbox "Enter your Twilio Account SID" 20 60 3>&1 1>&2 2>&3)
@@ -62,10 +70,10 @@ ufw allow 'Nginx Full'
 cat > /etc/nginx/sites-available/second-signal.nginx <<EOL
 server {
     listen 80;
-    server_name second-signal.local;
+    server_name $DOMAIN;
 
     location / {
-        proxy_pass http://127.0.0.1:8000;
+		proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -91,6 +99,7 @@ from dotenv import load_dotenv
 load_dotenv()
 from flask import Flask, request, render_template
 from twilio.rest import Client
+from twilio.base.exceptions import TwilioRestException
 import os
 
 app = Flask(__name__)
@@ -106,10 +115,28 @@ twilio_client = Client(account_sid, auth_token)
 
 @app.route('/request_number', methods=['POST'])
 def request_number():
-    # Logic to request a new phone number from Twilio
-    # new_number = twilio_client.incoming_phone_numbers.create(...)
+    try:
+        # Specify the desired area code
+        desired_area_code = "415"  # Replace with the area code you want
+        new_number = twilio_client.incoming_phone_numbers.create(
+            area_code=desired_area_code
+        )
+        return f"New number requested: {new_number.phone_number}"
+    except TwilioRestException as e:
+        return f"Failed to request new number: {e}"
 
-    return "New number requested"
+@app.route('/sms', methods=['POST'])
+def sms_received():
+    # Get the message body and sender's number from the request
+    from_number = request.form['From']
+    message_body = request.form['Body']
+
+    # Process the message (e.g., store it, display it, etc.)
+    # For now, let's just print it
+    print(f"Message from {from_number}: {message_body}")
+
+    # You need to return a valid TwiML response (even if it's empty)
+    return "<Response></Response>"
 
 if __name__ == '__main__':
     app.run(debug=True)
@@ -130,12 +157,42 @@ cat > templates/index.html <<EOL
 </html>
 EOL
 
+cat > templates/sms.html <<EOL
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SMS Messages</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        function fetchMessages() {
+            $.get('/get_messages', function(data) {
+                $('#messages').html(data);
+            });
+        }
+
+        // Poll for new messages every 5 seconds
+        setInterval(fetchMessages, 5000);
+    </script>
+</head>
+<body>
+    <div id="messages">Loading messages...</div>
+</body>
+</html>
+EOL
+
 # Deactivate the virtual environment
 deactivate
 
+if [ "$DOMAIN" != "localhost" ]; then
+    certbot --nginx -d $DOMAIN
+fi
+
+systemctl enable certbot.timer
+systemctl start certbot.timer
+
 # Provide instructions for starting the application with Gunicorn
 echo "Setup complete. To start your Flask app, navigate to $HOME/second-signal and run:"
-echo "source venv/bin/activate && gunicorn --workers 3 --bind unix:$HOME/second-signal/second-signal.sock app:app"
+echo "source venv/bin/activate && gunicorn --workers 3 --bind 0.0.0.0:8000 app:app"
 
 # Reminder for SSL Configuration
 echo "Don't forget to configure SSL for HTTPS in your Nginx server block if needed."
