@@ -13,7 +13,7 @@ apt update && apt -y dist-upgrade && apt -y autoremove
 apt install python3 python3-pip -y
 
 # Install virtualenv and whiptail
-apt install -y virtualenv whiptail
+apt install -y python3 python3-pip virtualenv python3-venv whiptail ufw
 
 # Create a virtual environment in your project directory
 cd $HOME
